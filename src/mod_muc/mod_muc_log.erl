@@ -214,40 +214,41 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%--------------------------------------------------------------------
 add_to_log2(text, {Nick, Packet}, Room, Opts, State) ->
+    MessageId = xml:get_tag_attr_s("id", Packet),
     case {xml:get_subtag(Packet, "subject"), xml:get_subtag(Packet, "body")} of
 	{false, false} ->
 	    ok;
 	{false, SubEl} ->
 	    Message = {body, xml:get_tag_cdata(SubEl)},
-	    add_message_to_log(Nick, Message, Room, Opts, State);
+	    add_message_to_log(Nick, Message, MessageId, Room, Opts, State);
 	{SubEl, _} ->
 	    Message = {subject, xml:get_tag_cdata(SubEl)},
-	    add_message_to_log(Nick, Message, Room, Opts, State)
+	    add_message_to_log(Nick, Message, MessageId, Room, Opts, State)
     end;
 
 add_to_log2(roomconfig_change, _Occupants, Room, Opts, State) ->
-    add_message_to_log("", roomconfig_change, Room, Opts, State);
+    add_message_to_log("", roomconfig_change, "", Room, Opts, State);
 
 add_to_log2(roomconfig_change_enabledlogging, Occupants, Room, Opts, State) ->
-    add_message_to_log("", {roomconfig_change, Occupants}, Room, Opts, State);
+    add_message_to_log("", {roomconfig_change, Occupants}, "", Room, Opts, State);
 
 add_to_log2(room_existence, NewStatus, Room, Opts, State) ->
-    add_message_to_log("", {room_existence, NewStatus}, Room, Opts, State);
+    add_message_to_log("", {room_existence, NewStatus}, "", Room, Opts, State);
 
 add_to_log2(nickchange, {OldNick, NewNick}, Room, Opts, State) ->
-    add_message_to_log(NewNick, {nickchange, OldNick}, Room, Opts, State);
+    add_message_to_log(NewNick, {nickchange, OldNick}, "", Room, Opts, State);
 
 add_to_log2(join, Nick, Room, Opts, State) ->
-    add_message_to_log(Nick, join, Room, Opts, State);
+    add_message_to_log(Nick, join, "", Room, Opts, State);
 
 add_to_log2(leave, {Nick, Reason}, Room, Opts, State) ->
     case Reason of
-	"" -> add_message_to_log(Nick, leave, Room, Opts, State);
-	_ -> add_message_to_log(Nick, {leave, Reason}, Room, Opts, State)
+	"" -> add_message_to_log(Nick, leave, "", Room, Opts, State);
+	_ -> add_message_to_log(Nick, {leave, Reason}, "", Room, Opts, State)
     end;
 
 add_to_log2(kickban, {Nick, Reason, Code}, Room, Opts, State) ->
-    add_message_to_log(Nick, {kickban, Code, Reason}, Room, Opts, State).
+    add_message_to_log(Nick, {kickban, Code, Reason}, "", Room, Opts, State).
 
 
 %%----------------------------------------------------------------------
@@ -277,6 +278,7 @@ build_filename_string(TimeStamp, OutDir, RoomJID, DirType, DirName, FileFormat) 
 		 end,
     Extension = case FileFormat of
 		    html -> ".html";
+		    json -> ".json";
 		    plaintext -> ".txt"
 		end,
     Fd = filename:join([OutDir, RoomString, Dir]),
@@ -332,7 +334,7 @@ set_filemode(Fn, {_FileMode, FileGroup}) ->
     ok = file:change_group(Fn, FileGroup).
 -endif.
 
-add_message_to_log(Nick1, Message, RoomJID, Opts, State) ->
+add_message_to_log(Nick1, Message, MessageId, RoomJID, Opts, State) ->
     #logstate{out_dir = OutDir,
 	   dir_type = DirType,
 	   dir_name = DirName,
@@ -389,8 +391,9 @@ add_message_to_log(Nick1, Message, RoomJID, Opts, State) ->
 	    close_previous_log(FnYesterday, Images_url, FileFormat)
     end,
 
-    %% Build message
-    Text = case Message of
+    {Type, Text} = case default_file_format(FileFormat) of 
+        true -> 
+            case Message of
 	       roomconfig_change ->
 		   RoomConfig = roomconfig_to_string(Room#room.config, Lang, FileFormat),
 		   put_room_config(F, RoomConfig, Lang, FileFormat),
@@ -454,21 +457,81 @@ add_message_to_log(Nick1, Message, RoomJID, Opts, State) ->
 	       {room_existence, RoomNewExistence} ->
 		   io_lib:format("<font class=\"mrcm\">~s</font><br/>",
 				 [get_room_existence_string(RoomNewExistence, Lang)])
-	   end,
+	   end;
+        false ->
+            case Message of
+               roomconfig_change ->
+                RoomConfig = roomconfig_to_string(Room#room.config, Lang, FileFormat),
+               put_room_config(F, RoomConfig, Lang, FileFormat),
+               {"roomconfig_change", io_lib:format("Chatroom configuration modified", [])};
+               {roomconfig_change, Occupants} ->
+               RoomConfig = roomconfig_to_string(Room#room.config, Lang, FileFormat),
+               put_room_config(F, RoomConfig, Lang, FileFormat),
+               RoomOccupants = roomoccupants_to_string(Occupants, FileFormat),
+               put_room_occupants(F, RoomOccupants, Lang, FileFormat),
+               {"roomconfig_change", io_lib:format("Chatroom configuration modified", [])};
+               join ->  
+               {"join", io_lib:format("~s ~s", [Nick, ?T("joins the room")])};
+               leave ->  
+               {"leave", io_lib:format("~s ~s", [Nick, ?T("leaves the room")])}; 
+               {leave, Reason} ->  
+               {"leave", io_lib:format("~s ~s: ~s", [Nick, ?T("leaves the room"), htmlize(Reason,NoFollow,FileFormat)])}; 
+               {kickban, "301", ""} ->  
+               {"kickban", io_lib:format("~s ~s", [Nick, ?T("has been banned")])};
+               {kickban, "301", Reason} ->  
+               {"kickban", io_lib:format("~s ~s: ~s", [Nick, ?T("has been banned"), htmlize(Reason,FileFormat)])};
+               {kickban, "307", ""} ->  
+               {"kickban", io_lib:format("~s ~s", [Nick, ?T("has been kicked")])};
+               {kickban, "307", Reason} ->  
+               {"kickban", io_lib:format("~s ~s: ~s", [Nick, ?T("has been kicked"), htmlize(Reason,FileFormat)])};
+               {kickban, "321", ""} ->  
+               {"kickban", io_lib:format("~s ~s", [Nick, ?T("has been kicked because of an affiliation change")])};
+               {kickban, "322", ""} ->  
+               {"kickban", io_lib:format("~s ~s", [Nick, ?T("has been kicked because the room has been changed to members-only")])};
+               {kickban, "332", ""} ->  
+               {"kickban", io_lib:format("~s ~s", [Nick, ?T("has been kicked because of a system shutdown")])};
+               {nickchange, OldNick} ->  
+               {"nickchange", io_lib:format("~s ~s ~s", [htmlize(OldNick,FileFormat), ?T("is now known as"), Nick])};
+               {subject, T} ->  
+               {"subject", io_lib:format("~s", [T])};
+               {body, T} ->  
+               {"chat", io_lib:format("~s", [T])};
+               {room_existence, RoomNewExistence} ->
+               {"room_existence", io_lib:format("~s", [get_room_existence_string(RoomNewExistence, Lang)])}
+           end
+        end,
+
     {Hour, Minute, Second} = Time,
+    {Year, Month, Day} = Date,
+    UnixEpoch = 62167219200, 
+    TzDate = (calendar:datetime_to_gregorian_seconds({Date,Time}) - UnixEpoch) * 1000,
+
+    STimeJson = lists:flatten(
+          io_lib:format("~4..0w~2..0w~2..0wT~2..0w~2..0w~2..0wZ", [Year, Month, Day, Hour, Minute, Second])),
     STime = lists:flatten(
 	      io_lib:format("~2..0w:~2..0w:~2..0w", [Hour, Minute, Second])),
     {_, _, Microsecs} = Now,
     STimeUnique = io_lib:format("~s.~w", [STime, Microsecs]),
 
     %% Write message
-    catch fw(F, io_lib:format("<a id=\"~s\" name=\"~s\" href=\"#~s\" class=\"ts\">[~s]</a> ",
-			[STimeUnique, STimeUnique, STimeUnique, STime]) ++ Text, FileFormat),
+    case default_file_format(FileFormat) of 
+        true -> 
+            %% Write message
+            fw(F, io_lib:format("<a id=\"~s\" name=\"~s\" href=\"#~s\" class=\"ts\">[~s]</a> ", 
+                    [STimeUnique, STimeUnique, STimeUnique, STime]) ++ Text, FileFormat);
+        false -> 
+            %% Write message
+            fw(F, io_lib:format("{ \"id\": \"~s\", \"time\": ~p, \"nick\": \"~s\", \"message_id\": \"~s\", \"text\": \"~s\", \"type\": \"~s\"},", [STimeUnique, TzDate, Nick1, MessageId, Text, Type]), FileFormat)
+    end,
 
     %% Close file
     file:close(F),
     ok.
 
+
+default_file_format(plaintext) -> true; 
+default_file_format(html) -> true; 
+default_file_format(_) -> false.
 
 %%----------------------------------------------------------------------
 %% Utilities
@@ -686,6 +749,8 @@ fw(F, S, O, FileFormat) ->
     S2 = case FileFormat of
 	     html ->
 		 S1;
+             json ->
+                 S1;
 	     plaintext ->
 		 S1a = ejabberd_regexp:greplace(S1, "<[^<^>]*>", ""),
 		 S1x = ejabberd_regexp:greplace(S1a, ?PLAINTEXT_CO, "~~"),
@@ -694,6 +759,8 @@ fw(F, S, O, FileFormat) ->
 	 end,
     io:format(F, S2, []).
 
+put_header(_, _, _, _, _, _, _, _, _, json) ->
+    ok;
 put_header(_, _, _, _, _, _, _, _, _, plaintext) ->
     ok;
 put_header(F, Room, Date, CSSFile, Lang, Hour_offset, Date_prev, Date_next, Top_link, FileFormat) ->
