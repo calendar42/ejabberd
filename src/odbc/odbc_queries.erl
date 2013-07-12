@@ -167,14 +167,14 @@ del_last(LServer, Username) ->
 get_password(LServer, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["select password from users "
-       "where username='", Username, "';"]).
+      ["select password from auth_user "
+       "where username='", Username, "' and password!='!';"]).
 
 set_password_t(LServer, Username, Pass) ->
     ejabberd_odbc:sql_transaction(
       LServer,
       fun() ->
-	      update_t("users", ["username", "password"],
+	      update_t("auth_user", ["username", "password"],
 		       [Username, Pass],
 		       ["username='", Username ,"'"])
       end).
@@ -182,19 +182,19 @@ set_password_t(LServer, Username, Pass) ->
 add_user(LServer, Username, Pass) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["insert into users(username, password) "
+      ["insert into auth_user(username, password) "
        "values ('", Username, "', '", Pass, "');"]).
 
 del_user(LServer, Username) ->
     ejabberd_odbc:sql_query(
       LServer,
-      ["delete from users where username='", Username ,"';"]).
+      ["delete from auth_user where username='", Username ,"';"]).
 
 del_user_return_password(_LServer, Username, Pass) ->
     P = ejabberd_odbc:sql_query_t(
-	  ["select password from users where username='",
+	  ["select password from auth_user where username='",
 	   Username, "';"]),
-    ejabberd_odbc:sql_query_t(["delete from users "
+    ejabberd_odbc:sql_query_t(["delete from auth_user "
 			       "where username='", Username,
 			       "' and password='", Pass, "';"]),
     P.
@@ -202,7 +202,7 @@ del_user_return_password(_LServer, Username, Pass) ->
 list_users(LServer) ->
     ejabberd_odbc:sql_query(
       LServer,
-      "select username from users").
+      "select username from auth_user").
 
 list_users(LServer, [{from, Start}, {to, End}]) when is_integer(Start) and
                                                      is_integer(End) ->
@@ -217,7 +217,7 @@ list_users(LServer, [{limit, Limit}, {offset, Offset}]) when is_integer(Limit) a
     ejabberd_odbc:sql_query(
       LServer,
       io_lib:format(
-        "select username from users " ++
+        "select username from auth_user " ++
         "order by username " ++
         "limit ~w offset ~w", [Limit, Offset]));
 list_users(LServer, [{prefix, Prefix},
@@ -227,7 +227,7 @@ list_users(LServer, [{prefix, Prefix},
                                              is_integer(Offset) ->
     ejabberd_odbc:sql_query(
       LServer,
-      io_lib:format("select username from users " ++
+      io_lib:format("select username from auth_user " ++
                     "where username like '~s%' " ++
                     "order by username " ++
                     "limit ~w offset ~w ", [Prefix, Limit, Offset])).
@@ -239,22 +239,22 @@ users_number(LServer) ->
 	true ->
 	    ejabberd_odbc:sql_query(
 	    LServer,
-	    "select reltuples from pg_class where oid = 'users'::regclass::oid");
+	    "select reltuples from pg_class where oid = 'auth_user'::regclass::oid");
 	_ ->
 	    ejabberd_odbc:sql_query(
 	    LServer,
-	    "select count(*) from users")
+	    "select count(*) from auth_user")
         end;
     _ ->
 	ejabberd_odbc:sql_query(
 	LServer,
-	"select count(*) from users")
+	"select count(*) from auth_user")
     end.
 
 users_number(LServer, [{prefix, Prefix}]) when is_list(Prefix) ->
     ejabberd_odbc:sql_query(
       LServer,
-      io_lib:fwrite("select count(*) from users " ++
+      io_lib:fwrite("select count(*) from auth_user " ++
                     %% Warning: Escape prefix at higher level to prevent SQL
                     %%          injection.
                     "where username like '~s%'", [Prefix]));
@@ -661,7 +661,7 @@ list_users(LServer, _) ->
 users_number(LServer) ->
 	ejabberd_odbc:sql_query(
 	      LServer,
-	      "select count(*) from users with (nolock)").
+	      "select count(*) from auth_user with (nolock)").
 
 users_number(LServer, _) ->
     % scope listing not supported
