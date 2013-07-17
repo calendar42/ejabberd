@@ -305,6 +305,7 @@ wait_for_stream({xmlstreamstart, _Name, Attrs}, StateData) ->
 			    send_header(StateData, Server, "1.0", DefaultLang),
 			    case StateData#state.authenticated of
 				false ->
+				    IP = peerip(StateData#state.sockmod, StateData#state.socket),
 				    SASLState =
 					cyrsasl:server_new(
 					  "jabber", Server, "", [],
@@ -314,11 +315,11 @@ wait_for_stream({xmlstreamstart, _Name, Attrs}, StateData) ->
 					  end,
 					  fun(U, P) ->
 						  ejabberd_auth:check_password_with_authmodule(
-						    U, Server, P)
+						    U, Server, P, IP)
 					  end,
 					  fun(U, P, D, DG) ->
 						  ejabberd_auth:check_password_with_authmodule(
-						    U, Server, P, D, DG)
+						    U, Server, P, D, DG, IP)
 					  end),
 				    Mechs = lists:map(
 					      fun(S) ->
@@ -511,8 +512,9 @@ wait_for_auth({xmlstreamelement, El}, StateData) ->
 		true ->
                     DGen = fun(PW) ->
                              sha:sha(StateData#state.streamid ++ PW) end,
+		    IP = peerip(StateData#state.sockmod, StateData#state.socket),
 		    case ejabberd_auth:check_password_with_authmodule(
-			   U, StateData#state.server, P, D, DGen) of
+			   U, StateData#state.server, P, D, DGen, IP) of
 			{true, AuthModule} ->
 			    ?INFO_MSG(
 			       "(~w) Accepted legacy authentication for ~s by ~p",

@@ -43,8 +43,8 @@
 	 stop/1,
 	 start_link/1,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
+	 check_password/4,
+	 check_password/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -142,7 +142,7 @@ plain_password_required() ->
 store_type() ->
 	external.
 
-check_password(User, Server, Password) ->
+check_password(User, Server, Password, _IP) ->
     %% In LDAP spec: empty password means anonymous authentication.
     %% As ejabberd is providing other anonymous authentication mechanisms
     %% we simply prevent the use of LDAP anonymous authentication.
@@ -155,8 +155,8 @@ check_password(User, Server, Password) ->
         end
     end.
 
-check_password(User, Server, Password, _Digest, _DigestGen) ->
-    check_password(User, Server, Password).
+check_password(User, Server, Password, _Digest, _DigestGen, IP) ->
+    check_password(User, Server, Password, IP).
 
 set_password(User, Server, Password) ->
     {ok, State} = eldap_utils:get_state(Server, ?MODULE),

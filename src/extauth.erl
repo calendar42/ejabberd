@@ -30,7 +30,7 @@
 -export([start/2,
 	 stop/1,
 	 init/2,
-	 check_password/3,
+	 check_password/4,
 	 set_password/3,
 	 try_register/3,
 	 remove_user/2,
@@ -74,8 +74,8 @@ stop(Host) ->
 get_process_name(Host, Integer) ->
     gen_mod:get_module_proc(lists:append([Host, integer_to_list(Integer)]), eauth).
 
-check_password(User, Server, Password) ->
-    call_port(Server, ["auth", User, Server, Password]).
+check_password(User, Server, Password, IP) ->
+    call_port(Server, ["auth", User, Server, Password, IP]).
 
 is_user_exists(User, Server) ->
     call_port(Server, ["isuser", User, Server]).

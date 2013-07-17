@@ -30,8 +30,8 @@
 %% External exports
 -export([start/1,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
+	 check_password/4,
+	 check_password/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -82,14 +82,14 @@ plain_password_required() ->
 store_type() ->
 	external.
 
-check_password(User, Server, Password) ->
+check_password(User, Server, Password, IP) ->
     case get_cache_option(Server) of
-	false -> check_password_extauth(User, Server, Password);
-	{true, CacheTime} -> check_password_cache(User, Server, Password, CacheTime)
+	false -> check_password_extauth(User, Server, Password, IP);
+	{true, CacheTime} -> check_password_cache(User, Server, Password, IP, CacheTime)
     end.
 
-check_password(User, Server, Password, _Digest, _DigestGen) ->
-    check_password(User, Server, Password).
+check_password(User, Server, Password, _Digest, _DigestGen, IP) ->
+    check_password(User, Server, Password, IP).
 
 set_password(User, Server, Password) ->
     case extauth:set_password(User, Server, Password) of
@@ -173,23 +173,23 @@ get_cache_option(Host) ->
 	_ -> false
     end.
 
-%% @spec (User, Server, Password) -> true | false
-check_password_extauth(User, Server, Password) ->
-    extauth:check_password(User, Server, Password) andalso Password /= "".
+%% @spec (User, Server, Password, IP) -> true | false
+check_password_extauth(User, Server, Password, IP) ->
+    extauth:check_password(User, Server, Password, IP) andalso Password /= "".
 
 %% @spec (User, Server, Password) -> true | false
 try_register_extauth(User, Server, Password) ->
     extauth:try_register(User, Server, Password).
 
-check_password_cache(User, Server, Password, CacheTime) ->
+check_password_cache(User, Server, Password, IP, CacheTime) ->
     case get_last_access(User, Server) of
 	online ->
 	    check_password_internal(User, Server, Password);
 	never ->
-	    check_password_external_cache(User, Server, Password);
+	    check_password_external_cache(User, Server, Password, IP);
 	mod_last_required ->
 	    ?ERROR_MSG("extauth is used, extauth_cache is enabled but mod_last is not enabled in that host", []),
-	    check_password_external_cache(User, Server, Password);
+	    check_password_external_cache(User, Server, Password, IP);
 	TimeStamp ->
 	    %% If last access exists, compare last access with cache refresh time
 	    case is_fresh_enough(TimeStamp, CacheTime) of
@@ -201,11 +201,11 @@ check_password_cache(User, Server, Password, CacheTime) ->
 			    true;
 			%% Else (password nonvalid in Mnesia), check in extauth and cache result
 			false ->
-			    check_password_external_cache(User, Server, Password)
+			    check_password_external_cache(User, Server, Password, IP)
 		    end;
 		%% Else (need to refresh), check in extauth and cache result
 		false ->
-		    check_password_external_cache(User, Server, Password)
+		    check_password_external_cache(User, Server, Password, IP)
 	    end
     end.
 
@@ -233,8 +233,8 @@ get_password_cache(User, Server, CacheTime) ->
 
 
 %% Check the password using extauth; if success then cache it
-check_password_external_cache(User, Server, Password) ->
-    case check_password_extauth(User, Server, Password) of
+check_password_external_cache(User, Server, Password, IP) ->
+    case check_password_extauth(User, Server, Password, IP) of
 	true ->
 	    set_password_internal(User, Server, Password), true;
 	false ->

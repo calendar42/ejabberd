@@ -29,8 +29,8 @@
 %% External exports
 -export([start/1,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
+	 check_password/4,
+	 check_password/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -56,7 +56,10 @@ start(_Host) ->
 set_password(_User, _Server, _Password) ->
     {error, not_allowed}.
 
-check_password(User, Server, Password, _Digest, _DigestGen) ->
+check_password(User, Server, Password, _Digest, _DigestGen, _IP) ->
+    check_password(User, Server, Password).
+
+check_password(User, Server, Password, _IP) ->
     check_password(User, Server, Password).
 
 check_password(User, Host, Password) ->

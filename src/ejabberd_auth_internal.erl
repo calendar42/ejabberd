@@ -30,8 +30,8 @@
 %% External exports
 -export([start/1,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
+	 check_password/4,
+	 check_password/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -90,7 +90,7 @@ store_type() ->
 	true -> scram %% allows: PLAIN SCRAM
     end.
 
-check_password(User, Server, Password) ->
+check_password(User, Server, Password, _IP) ->
     LUser = jlib:nodeprep(User),
     LServer = jlib:nameprep(Server),
     US = {LUser, LServer},
@@ -103,7 +103,7 @@ check_password(User, Server, Password) ->
 	    false
     end.
 
-check_password(User, Server, Password, Digest, DigestGen) ->
+check_password(User, Server, Password, Digest, DigestGen, _IP) ->
     LUser = jlib:nodeprep(User),
     LServer = jlib:nameprep(Server),
     US = {LUser, LServer},

@@ -32,10 +32,10 @@
 %% External exports
 -export([start/0,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
-	 check_password_with_authmodule/3,
-	 check_password_with_authmodule/5,
+	 check_password/4,
+	 check_password/6,
+	 check_password_with_authmodule/4,
+	 check_password_with_authmodule/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -95,8 +95,8 @@ store_type(Server) ->
 %% @doc Check if the user and password can login in server.
 %% @spec (User::string(), Server::string(), Password::string()) ->
 %%     true | false
-check_password(User, Server, Password) ->
-    case check_password_with_authmodule(User, Server, Password) of
+check_password(User, Server, Password, IP) ->
+    case check_password_with_authmodule(User, Server, Password, IP) of
 	{true, _AuthModule} -> true;
 	false -> false
     end.
@@ -105,9 +105,9 @@ check_password(User, Server, Password) ->
 %% @spec (User::string(), Server::string(), Password::string(),
 %%        Digest::string(), DigestGen::function()) ->
 %%     true | false
-check_password(User, Server, Password, Digest, DigestGen) ->
+check_password(User, Server, Password, Digest, DigestGen, IP) ->
     case check_password_with_authmodule(User, Server, Password,
-					Digest, DigestGen) of
+					Digest, DigestGen, IP) of
 	{true, _AuthModule} -> true;
 	false -> false
     end.
@@ -122,12 +122,12 @@ check_password(User, Server, Password, Digest, DigestGen) ->
 %%   AuthModule = ejabberd_auth_anonymous | ejabberd_auth_external
 %%                 | ejabberd_auth_internal | ejabberd_auth_ldap
 %%                 | ejabberd_auth_odbc | ejabberd_auth_pam
-check_password_with_authmodule(User, Server, Password) ->
-    check_password_loop(auth_modules(Server), [User, Server, Password]).
+check_password_with_authmodule(User, Server, Password, IP) ->
+    check_password_loop(auth_modules(Server), [User, Server, Password, IP]).
 
-check_password_with_authmodule(User, Server, Password, Digest, DigestGen) ->
+check_password_with_authmodule(User, Server, Password, Digest, DigestGen, IP) ->
     check_password_loop(auth_modules(Server), [User, Server, Password,
-					       Digest, DigestGen]).
+					       Digest, DigestGen, IP]).
 
 check_password_loop([], _Args) ->
     false;

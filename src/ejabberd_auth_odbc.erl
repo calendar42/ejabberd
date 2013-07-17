@@ -30,8 +30,8 @@
 %% External exports
 -export([start/1,
 	 set_password/3,
-	 check_password/3,
-	 check_password/5,
+	 check_password/4,
+	 check_password/6,
 	 try_register/3,
 	 dirty_get_registered_users/0,
 	 get_vh_registered_users/1,
@@ -62,7 +62,8 @@ store_type() ->
 	plain.
 
 %% @spec (User, Server, Password) -> true | false | {error, Error}
-check_password(User, Server, Password) ->
+check_password(User, Server, Password, IP) ->
+	?INFO_MSG("check_password ~s ~s", [User, IP]),
     case jlib:nodeprep(User) of
 	error ->
 	    false;
@@ -85,7 +86,8 @@ check_password(User, Server, Password) ->
     end.
 
 %% @spec (User, Server, Password, Digest, DigestGen) -> true | false | {error, Error}
-check_password(User, Server, Password, Digest, DigestGen) ->
+check_password(User, Server, Password, Digest, DigestGen, IP) ->
+	?INFO_MSG("check_password ~s ~s", [User, IP]),
     case jlib:nodeprep(User) of
 	error ->
 	    false;
