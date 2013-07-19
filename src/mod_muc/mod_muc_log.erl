@@ -321,6 +321,8 @@ write_last_lines(F, Images_dir, _FileFormat) ->
 
 htmlize_nick(Nick1, html) ->
     htmlize("<"++Nick1++">", html);
+htmlize_nick(Nick1, json) ->
+    Nick1;
 htmlize_nick(Nick1, plaintext) ->
     htmlize(?PLAINTEXT_IN++Nick1++?PLAINTEXT_OUT, plaintext).
 

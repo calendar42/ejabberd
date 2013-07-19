@@ -75,7 +75,7 @@ get_process_name(Host, Integer) ->
     gen_mod:get_module_proc(lists:append([Host, integer_to_list(Integer)]), eauth).
 
 check_password(User, Server, Password, IP) ->
-    call_port(Server, ["auth", User, Server, Password, IP]).
+    call_port(Server, ["auth", User, Server, Password]).
 
 is_user_exists(User, Server) ->
     call_port(Server, ["isuser", User, Server]).

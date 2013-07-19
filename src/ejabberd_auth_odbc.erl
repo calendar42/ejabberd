@@ -48,6 +48,7 @@
 	]).
 
 -include("ejabberd.hrl").
+-include("jlib.hrl").
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -61,61 +62,82 @@ plain_password_required() ->
 store_type() ->
 	plain.
 
+allowed_ip(IP) ->
+    case IP of 
+    %% "::FFFF:127.0.0.1" IPV6 localhost
+    {{0,0,0,0,0,65535,32512,1},_} ->
+        true;
+    {{127,0,0,1},_} ->
+        true;
+    {_,_} ->
+        false
+    end.
+
 %% @spec (User, Server, Password) -> true | false | {error, Error}
 check_password(User, Server, Password, IP) ->
-	?INFO_MSG("check_password ~s ~s", [User, IP]),
-    case jlib:nodeprep(User) of
-	error ->
-	    false;
-	LUser ->
-	    Username = ejabberd_odbc:escape(LUser),
-	    LServer = jlib:nameprep(Server),
-	    try odbc_queries:get_password(LServer, Username) of
-		{selected, ["password"], [{Password}]} ->
-		    Password /= ""; %% Password is correct, and not empty
-		{selected, ["password"], [{_Password2}]} ->
-		    false; %% Password is not correct
-		{selected, ["password"], []} ->
-		    false; %% Account does not exist
-		{error, _Error} ->
-		    false %% Typical error is that table doesn't exist
-	    catch
-		_:_ ->
-		    false %% Typical error is database not accessible
-	    end
+    case allowed_ip(IP) of
+   	true ->
+	    case jlib:nodeprep(User) of
+		error ->
+		    false;
+		LUser ->
+		    Username = ejabberd_odbc:escape(LUser),
+		    LServer = jlib:nameprep(Server),
+		    try odbc_queries:get_password(LServer, Username) of
+			{selected, ["password"], [{Password}]} ->
+			    Password /= ""; %% Password is correct, and not empty
+			{selected, ["password"], [{_Password2}]} ->
+			    false; %% Password is not correct
+			{selected, ["password"], []} ->
+			    false; %% Account does not exist
+			{error, _Error} ->
+			    false %% Typical error is that table doesn't exist
+		    catch
+			_:_ ->
+			    false %% Typical error is database not accessible
+            end
+        end;
+    false ->
+	    ?INFO_MSG("Authentication not allowed for ip: ~p", [{IP}]),
+		false
     end.
 
 %% @spec (User, Server, Password, Digest, DigestGen) -> true | false | {error, Error}
 check_password(User, Server, Password, Digest, DigestGen, IP) ->
-	?INFO_MSG("check_password ~s ~s", [User, IP]),
-    case jlib:nodeprep(User) of
-	error ->
-	    false;
-	LUser ->
-	    Username = ejabberd_odbc:escape(LUser),
-	    LServer = jlib:nameprep(Server),
-	    try odbc_queries:get_password(LServer, Username) of
-		%% Account exists, check if password is valid
-		{selected, ["password"], [{Passwd}]} ->
-		    DigRes = if
-				 Digest /= "" ->
-				     Digest == DigestGen(Passwd);
-				 true ->
-				     false
-			     end,
-		    if DigRes ->
-			    true;
-		       true ->
-			    (Passwd == Password) and (Password /= "")
-		    end;
-		{selected, ["password"], []} ->
-		    false; %% Account does not exist
-		{error, _Error} ->
-		    false %% Typical error is that table doesn't exist
-	    catch
-		_:_ ->
-		    false %% Typical error is database not accessible
-	    end
+	case allowed_ip(IP) of 
+    true ->
+        case jlib:nodeprep(User) of
+        error ->
+            false;
+        LUser ->
+            Username = ejabberd_odbc:escape(LUser),
+            LServer = jlib:nameprep(Server),
+            try odbc_queries:get_password(LServer, Username) of
+            %% Account exists, check if password is valid
+            {selected, ["password"], [{Passwd}]} ->
+                DigRes = if
+                     Digest /= "" ->
+                         Digest == DigestGen(Passwd);
+                     true ->
+                         false
+                     end,
+                if DigRes ->
+                    true;
+                   true ->
+                    (Passwd == Password) and (Password /= "")
+                end;
+            {selected, ["password"], []} ->
+                false; %% Account does not exist
+            {error, _Error} ->
+                false %% Typical error is that table doesn't exist
+            catch
+            _:_ ->
+                false %% Typical error is database not accessible
+            end
+        end;
+    false ->
+	    ?INFO_MSG("Authentication not allowed for ip: ~p", [{IP}]),
+        false
     end.
 
 %% @spec (User::string(), Server::string(), Password::string()) ->
