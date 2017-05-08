@@ -1,0 +1,834 @@
+--- src/mod_vcard_odbc.erl	2013-02-11 15:14:50.982000156 +0100
++++ src/mod_vcard_odbc.erl	2013-02-11 15:23:15.776000156 +0100
+@@ -146,9 +146,11 @@
+ 		    IQ#iq{type = error, sub_el = [SubEl, ?ERR_NOT_ALLOWED]}
+ 	    end;
+ 	get ->
++        #jid{luser = LFromUser, lserver = LFromServer} = From,
+ 	    #jid{luser = LUser, lserver = LServer} = To,
++        FromUsername = ejabberd_odbc:escape(LFromUser),
+ 	    Username = ejabberd_odbc:escape(LUser),
+-	    case catch odbc_queries:get_vcard(LServer, Username) of
++	    case catch odbc_queries:get_vcard(LServer, Username, FromUsername) of
+ 		{selected, ["vcard"], [{SVCARD}]} ->
+ 		    case xml_stream:parse_element(SVCARD) of
+ 			{error, _Reason} ->
+@@ -166,18 +168,29 @@
+     end.
+ 
+ set_vcard(User, LServer, VCARD) ->
+-    FN       = xml:get_path_s(VCARD, [{elem, "FN"},                     cdata]),
+     Family   = xml:get_path_s(VCARD, [{elem, "N"}, {elem, "FAMILY"},    cdata]),
++    % FamilyPermission   = xml:get_attr_s(VCARD, [{elem, "N"}, {elem, "FAMILY"}, {attr, "permission"}]),
+     Given    = xml:get_path_s(VCARD, [{elem, "N"}, {elem, "GIVEN"},     cdata]),
+-    Middle   = xml:get_path_s(VCARD, [{elem, "N"}, {elem, "MIDDLE"},    cdata]),
+-    Nickname = xml:get_path_s(VCARD, [{elem, "NICKNAME"},               cdata]),
+     BDay     = xml:get_path_s(VCARD, [{elem, "BDAY"},                   cdata]),
+-    CTRY     = xml:get_path_s(VCARD, [{elem, "ADR"}, {elem, "CTRY"},    cdata]),
+-    Locality = xml:get_path_s(VCARD, [{elem, "ADR"}, {elem, "LOCALITY"},cdata]),
+     EMail1   = xml:get_path_s(VCARD, [{elem, "EMAIL"}, {elem, "USERID"},cdata]),
+     EMail2   = xml:get_path_s(VCARD, [{elem, "EMAIL"},                  cdata]),
+     OrgName  = xml:get_path_s(VCARD, [{elem, "ORG"}, {elem, "ORGNAME"}, cdata]),
+     OrgUnit  = xml:get_path_s(VCARD, [{elem, "ORG"}, {elem, "ORGUNIT"}, cdata]),
++
++    Url      = xml:get_path_s(VCARD, [{elem, "URL"}, cdata]),
++    Title    = xml:get_path_s(VCARD, [{elem, "TITLE"}, cdata]),
++    Desc     = xml:get_path_s(VCARD, [{elem, "DESC"}, cdata]),
++    Role     = xml:get_path_s(VCARD, [{elem, "ROLE"}, cdata]),
++    Tel      = xml:get_path_s(VCARD, [{elem, "TEL"}, {elem, "NUMBER"}, cdata]),
++
++    AddressHomeExtadd       = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "EXTADD"}, cdata]),
++    AddressHomeStreet       = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "STREET"}, cdata]),
++    AddressHomeLocality     = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "LOCALITY"}, cdata]),
++    AddressHomeRegion       = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "REGION"}, cdata]),
++    AddressHomePostcode     = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "PCODE"}, cdata]),
++    AddressHomeCity         = xml:get_path_s(VCARD, [{elem, "ADR"},  {elem, "CTRY"}, cdata]),
++
++
+     EMail = case EMail1 of
+ 		"" ->
+ 		    EMail2;
+@@ -186,68 +199,40 @@
+ 	    end,
+ 
+     LUser     = jlib:nodeprep(User),
+-    LFN       = string:to_lower(FN),
+-    LFamily   = string:to_lower(Family),
+-    LGiven    = string:to_lower(Given),
+-    LMiddle   = string:to_lower(Middle),
+-    LNickname = string:to_lower(Nickname),
+-    LBDay     = string:to_lower(BDay),
+-    LCTRY     = string:to_lower(CTRY),
+-    LLocality = string:to_lower(Locality),
+-    LEMail    = string:to_lower(EMail),
+-    LOrgName  = string:to_lower(OrgName),
+-    LOrgUnit  = string:to_lower(OrgUnit),
+ 
+     if
+-	(LUser     == error) or
+-	(LFN       == error) or
+-	(LFamily   == error) or
+-	(LGiven    == error) or
+-	(LMiddle   == error) or
+-	(LNickname == error) or
+-	(LBDay     == error) or
+-	(LCTRY     == error) or
+-	(LLocality == error) or
+-	(LEMail    == error) or
+-	(LOrgName  == error) or
+-	(LOrgUnit  == error) ->
++	(LUser     == error) ->
+ 	    {error, badarg};
+ 	true ->
+ 	    Username = ejabberd_odbc:escape(User),
+ 	    LUsername = ejabberd_odbc:escape(LUser),
+-	    SVCARD = ejabberd_odbc:escape(
+-		       xml:element_to_binary(VCARD)),
+ 
+-	    SFN = ejabberd_odbc:escape(FN),
+-	    SLFN = ejabberd_odbc:escape(LFN),
+ 	    SFamily = ejabberd_odbc:escape(Family),
+-	    SLFamily = ejabberd_odbc:escape(LFamily),
+ 	    SGiven = ejabberd_odbc:escape(Given),
+-	    SLGiven = ejabberd_odbc:escape(LGiven),
+-	    SMiddle = ejabberd_odbc:escape(Middle),
+-	    SLMiddle = ejabberd_odbc:escape(LMiddle),
+-	    SNickname = ejabberd_odbc:escape(Nickname),
+-	    SLNickname = ejabberd_odbc:escape(LNickname),
+ 	    SBDay = ejabberd_odbc:escape(BDay),
+-	    SLBDay = ejabberd_odbc:escape(LBDay),
+-	    SCTRY = ejabberd_odbc:escape(CTRY),
+-	    SLCTRY = ejabberd_odbc:escape(LCTRY),
+-	    SLocality = ejabberd_odbc:escape(Locality),
+-	    SLLocality = ejabberd_odbc:escape(LLocality),
+ 	    SEMail = ejabberd_odbc:escape(EMail),
+-	    SLEMail = ejabberd_odbc:escape(LEMail),
+ 	    SOrgName = ejabberd_odbc:escape(OrgName),
+-	    SLOrgName = ejabberd_odbc:escape(LOrgName),
+ 	    SOrgUnit = ejabberd_odbc:escape(OrgUnit),
+-	    SLOrgUnit = ejabberd_odbc:escape(LOrgUnit),
+ 
+-	    odbc_queries:set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail,
+-				   SFN, SFamily, SGiven, SLBDay, SLCTRY,
+-				   SLEMail, SLFN, SLFamily, SLGiven,
+-				   SLLocality, SLMiddle, SLNickname,
+-				   SLOrgName, SLOrgUnit, SLocality,
+-				   SMiddle, SNickname, SOrgName,
+-				   SOrgUnit, SVCARD, Username),
++
++        SUrl = ejabberd_odbc:escape(Url),
++        STitle = ejabberd_odbc:escape(Title),
++        SDesc = ejabberd_odbc:escape(Desc),
++        SRole = ejabberd_odbc:escape(Role),
++        STel = ejabberd_odbc:escape(Tel),
++        SAddressHomeExtadd = ejabberd_odbc:escape(AddressHomeExtadd),
++        SAddressHomeStreet = ejabberd_odbc:escape(AddressHomeStreet),
++        SAddressHomeLocality = ejabberd_odbc:escape(AddressHomeLocality),
++        SAddressHomeRegion = ejabberd_odbc:escape(AddressHomeRegion),
++        SAddressHomePostcode = ejabberd_odbc:escape(AddressHomePostcode),
++        SAddressHomeCity = ejabberd_odbc:escape(AddressHomeCity),
++
++
++	    odbc_queries:set_vcard(LServer, LUsername , SFamily , SGiven , 
++            SBDay , SEMail , SOrgName , SOrgUnit , SUrl , STitle , SDesc , 
++            SRole , STel , SAddressHomeExtadd , SAddressHomeStreet , 
++            SAddressHomeLocality , SAddressHomeRegion , SAddressHomePostcode , 
++            SAddressHomeCity, Username),
+ 
+ 	    ejabberd_hooks:run(vcard_set, LServer, [LUser, LServer, VCARD])
+     end.
+@@ -270,18 +255,18 @@
+ 					    "for any matching Jabber User "
+ 					    "(Add * to the end of field to "
+ 					    "match substring)")}]},
+-	   ?TLFIELD("text-single", "User", "user"),
+-	   ?TLFIELD("text-single", "Full Name", "fn"),
+-	   ?TLFIELD("text-single", "Name", "first"),
+-	   ?TLFIELD("text-single", "Middle Name", "middle"),
+-	   ?TLFIELD("text-single", "Family Name", "last"),
+-	   ?TLFIELD("text-single", "Nickname", "nick"),
+-	   ?TLFIELD("text-single", "Birthday", "bday"),
+-	   ?TLFIELD("text-single", "Country", "ctry"),
+-	   ?TLFIELD("text-single", "City", "locality"),
+-	   ?TLFIELD("text-single", "Email", "email"),
+-	   ?TLFIELD("text-single", "Organization Name", "orgname"),
+-	   ?TLFIELD("text-single", "Organization Unit", "orgunit")
++       ?TLFIELD("text-single", "Full Name", "fn")
++	   % ?TLFIELD("text-single", "User", "user"),
++	   % ?TLFIELD("text-single", "Full Name", "fn"),
++	   % ?TLFIELD("text-single", "Name", "first"),
++	   % ?TLFIELD("text-single", "Middle Name", "middle"),
++	   % ?TLFIELD("text-single", "Family Name", "last"),
++	   % ?TLFIELD("text-single", "Nickname", "nick"),
++	   % ?TLFIELD("text-single", "Birthday", "bday"),
++	   % ?TLFIELD("text-single", "Country", "ctry"),
++	   % ?TLFIELD("text-single", "City", "locality"),
++	   % ?TLFIELD("text-single", "Organization Name", "orgname"),
++	   % ?TLFIELD("text-single", "Organization Unit", "orgunit")
+ 	  ]}]).
+ 
+ do_route(ServerHost, From, To, Packet) ->
+@@ -435,22 +420,65 @@
+ 			       {"var", Var}], []}).
+ 
+ search_result(Lang, JID, ServerHost, Data) ->
++    % case catch odbc_queries:get_vcard(ServerHost, "0031641912834") of
++
++    % {selected, ["username", "fn", "family", "given", "middle",
++    %         "nickname", "bday", "ctry", "locality",
++    %         "email", "orgname", "orgunit"],
++    %  Rs} when is_list(Rs) ->
++    %     Rs;
++    % Error ->
++    %     ?ERROR_MSG("~p", [Error]),
++    %     []
++    % end
++
++    % {selected, ["vcard"], [{SVCARD}]} ->
++    %     case xml_stream:parse_element(SVCARD) of
++    %     {error, _Reason} ->
++    %         [];
++    %     VCARD ->
++    %         [VCARD]
++    %     end;
++    % {selected, ["vcard"], []} ->
++    %     [];
++    % _ ->
++    %     []
++    % end.
++
++    % xml_stream:parse_element("<vCard></vCard>").
++    % ejabberd_odbc:sql_query(LServer, ["select <vCard></vCard> as vcard;"])
++
+     [{xmlelement, "title", [],
+       [{xmlcdata, translate:translate(Lang, "Search Results for ") ++
+ 	jlib:jid_to_string(JID)}]},
+      {xmlelement, "reported", [],
+-      [?TLFIELD("text-single", "Jabber ID", "jid"),
++      [?TLFIELD("text-single", "Jabber ID", "user"),
+        ?TLFIELD("text-single", "Full Name", "fn"),
+-       ?TLFIELD("text-single", "Name", "first"),
+-       ?TLFIELD("text-single", "Middle Name", "middle"),
+-       ?TLFIELD("text-single", "Family Name", "last"),
+-       ?TLFIELD("text-single", "Nickname", "nick"),
+-       ?TLFIELD("text-single", "Birthday", "bday"),
+-       ?TLFIELD("text-single", "Country", "ctry"),
+-       ?TLFIELD("text-single", "City", "locality"),
+-       ?TLFIELD("text-single", "Email", "email"),
+-       ?TLFIELD("text-single", "Organization Name", "orgname"),
+-       ?TLFIELD("text-single", "Organization Unit", "orgunit")
++       ?TLFIELD("text-single", "First Name", "given"),
++       ?TLFIELD("text-single", "Last Name", "family"),
++        ?TLFIELD("text-single", "Phonenumber", "phonenumber"),
++        ?TLFIELD("text-single", "HomePhonenumber", "homePhonenumber"),
++        ?TLFIELD("text-single", "WorkPhonenumber", "workPhonenumber"),
++        ?TLFIELD("text-single", "Nationality", "nationality"),
++        ?TLFIELD("text-single", "Url", "url"),
++        ?TLFIELD("text-single", "Organization", "orgName"),
++        ?TLFIELD("text-single", "OrganizationUnit", "orgUnit"),
++        ?TLFIELD("text-single", "Title", "title"),
++        ?TLFIELD("text-single", "Role", "role"),
++        ?TLFIELD("text-single", "AddressHomeStreet", "homeAddressStreet"),
++        ?TLFIELD("text-single", "AddressHomeExtadd", "homeAddressExtAdd"),
++        ?TLFIELD("text-single", "AddressHomeLocality", "homeAddressLocality"),
++        ?TLFIELD("text-single", "AddressHomeRegion", "homeAddressRegion"),
++        ?TLFIELD("text-single", "AddressHomePostcode", "homeAddressPostcode"),
++        ?TLFIELD("text-single", "AddressHomeCountry", "homeAddressCountry"),
++        ?TLFIELD("text-single", "AddressWorkStreet", "workAddressStreet"),
++        ?TLFIELD("text-single", "AddressWorkExtadd", "workAddressExtAdd"),
++        ?TLFIELD("text-single", "AddressWorkLocality", "workAddressLocality"),
++        ?TLFIELD("text-single", "AddressWorkRegion", "workAddressRegion"),
++        ?TLFIELD("text-single", "AddressWorkPostcode", "workAddressPostcode"),
++        ?TLFIELD("text-single", "AddressWorkCountry", "workAddressCountry"),
++        ?TLFIELD("text-single", "Description", "description"),
++        ?TLFIELD("text-single", "Birthday", "birthday")
+       ]}] ++ lists:map(fun(R) -> record_to_item(ServerHost, R) end,
+ 		       search(ServerHost, Data)).
+ 
+@@ -460,23 +488,44 @@
+ 	   [{xmlcdata, Val}]}]}).
+ 
+ 
+-record_to_item(LServer, {Username, FN, Family, Given, Middle,
+-			 Nickname, BDay, CTRY, Locality,
+-			 EMail, OrgName, OrgUnit}) ->
++record_to_item(LServer, {Username, Given, Family, Phonenumber, 
++    HomePhonenumber, WorkPhonenumber, Nationality, Url, 
++    Organization, OrganizationUnit, Title, Role, 
++    AddressHomeStreet, AddressHomeExtadd, AddressHomeLocality, AddressHomeRegion, AddressHomePostcode, AddressHomeCountry, 
++    AddressWorkStreet, AddressWorkExtadd, AddressWorkLocality, AddressWorkRegion, AddressWorkPostcode, AddressWorkCountry, 
++    Description, Birthday}) ->
++% record_to_item(LServer, {Username, FN, Family, Given, Middle,
++% 			 Nickname, BDay, CTRY, Locality,
++% 			 EMail, OrgName, OrgUnit}) ->
+     {xmlelement, "item", [],
+      [
+-       ?FIELD("jid",      Username ++ "@" ++ LServer),
+-       ?FIELD("fn",       FN),
+-       ?FIELD("last",     Family),
+-       ?FIELD("first",    Given),
+-       ?FIELD("middle",   Middle),
+-       ?FIELD("nick",     Nickname),
+-       ?FIELD("bday",     BDay),
+-       ?FIELD("ctry",     CTRY),
+-       ?FIELD("locality", Locality),
+-       ?FIELD("email",    EMail),
+-       ?FIELD("orgname",  OrgName),
+-       ?FIELD("orgunit",  OrgUnit)
++       ?FIELD("user",      Username ++ "@" ++ LServer),
++       ?FIELD("fn",       Given ++ " " ++ Family),
++       ?FIELD("given",    Given),
++       ?FIELD("family",     Family),
++        ?FIELD("phonenumber", Phonenumber),
++        ?FIELD("homePhonenumber", HomePhonenumber),
++        ?FIELD("workPhonenumber", WorkPhonenumber),
++        ?FIELD("nationality", Nationality),
++        ?FIELD("url", Url),
++        ?FIELD("orgName", Organization),
++        ?FIELD("orgUnit", OrganizationUnit),
++        ?FIELD("title", Title),
++        ?FIELD("role", Role),
++        ?FIELD("homeAddressStreet", AddressHomeStreet),
++        ?FIELD("homeAddressExtAdd", AddressHomeExtadd),
++        ?FIELD("homeAddressLocality", AddressHomeLocality),
++        ?FIELD("homeAddressRegion", AddressHomeRegion),
++        ?FIELD("homeAddressPostcode", AddressHomePostcode),
++        ?FIELD("homeAddressCountry", AddressHomeCountry),
++        ?FIELD("workAddressStreet", AddressWorkStreet),
++        ?FIELD("workAddressExtAdd", AddressWorkExtadd),
++        ?FIELD("workAddressLocality", AddressWorkLocality),
++        ?FIELD("workAddressRegion", AddressWorkRegion),
++        ?FIELD("workAddressPostcode", AddressWorkPostcode),
++        ?FIELD("workAddressCountry", AddressWorkCountry),
++        ?FIELD("description", Description),
++        ?FIELD("birthday", Birthday)
+       ]
+      }.
+ 
+@@ -484,38 +533,155 @@
+ search(LServer, Data) ->
+     MatchSpec = make_matchspec(LServer, Data),
+     AllowReturnAll = gen_mod:get_module_opt(LServer, ?MODULE,
+-					    allow_return_all, false),
++                      allow_return_all, false),
+     if
+-	(MatchSpec == "") and (not AllowReturnAll) ->
+-	    [];
+-	true ->
+-	    Limit = case gen_mod:get_module_opt(LServer, ?MODULE,
+-						matches, ?JUD_MATCHES) of
+-			infinity ->
+-			    "";
+-			Val when is_integer(Val) and (Val > 0) ->
+-			    [" LIMIT ", integer_to_list(Val)];
+-			Val ->
+-			    ?ERROR_MSG("Illegal option value ~p. "
+-				       "Default value ~p substituted.",
+-				       [{matches, Val}, ?JUD_MATCHES]),
+-			    [" LIMIT ", integer_to_list(?JUD_MATCHES)]
+-		    end,
+-	    case catch ejabberd_odbc:sql_query(
+-			 LServer,
+-			 ["select username, fn, family, given, middle, "
+-			  "       nickname, bday, ctry, locality, "
+-			  "       email, orgname, orgunit from vcard_search ",
+-			  MatchSpec, Limit, ";"]) of
+-		{selected, ["username", "fn", "family", "given", "middle",
+-			    "nickname", "bday", "ctry", "locality",
+-			    "email", "orgname", "orgunit"],
+-		 Rs} when is_list(Rs) ->
+-		    Rs;
+-		Error ->
+-		    ?ERROR_MSG("~p", [Error]),
+-		    []
+-	    end
++    (MatchSpec == "") and (not AllowReturnAll) ->
++        [];
++    true ->
++        Limit = case gen_mod:get_module_opt(LServer, ?MODULE,
++                      matches, ?JUD_MATCHES) of
++          infinity ->
++              "";
++          Val when is_integer(Val) and (Val > 0) ->
++              [" LIMIT ", integer_to_list(Val)];
++          Val ->
++              ?ERROR_MSG("Illegal option value ~p. "
++                     "Default value ~p substituted.",
++                     [{matches, Val}, ?JUD_MATCHES]),
++              [" LIMIT ", integer_to_list(?JUD_MATCHES)]
++          end,
++        case catch ejabberd_odbc:sql_query(
++             LServer,
++             ["SELECT vcard.username, vcard.first_name,  vcard.last_name, vcard.phonenumber, vcard.home_phonenumber, vcard.work_phonenumber, vcard.nationality, vcard.url, vcard.organization, vcard.organization_unit, vcard.title, vcard.role, vcard.address_home_street, vcard.address_home_extadd, vcard.address_home_locality, vcard.address_home_region, vcard.address_home_postcode, vcard.address_home_country, vcard.address_work_street, vcard.address_work_extadd, vcard.address_work_locality, vcard.address_work_region, vcard.address_work_postcode, vcard.address_work_country, vcard.description, vcard.birthday "
++              "FROM ( "
++                "SELECT auth_user.username, auth_user.first_name, "
++                  "auth_user.last_name, "
++                  "CASE  "
++                    "WHEN p.phonenumber_permission = 1 "
++                      "THEN p.phonenumber "
++                    "ELSE '' "
++                    "END AS phonenumber, "
++                  "CASE  "
++                    "WHEN p.home_phonenumber_permission = 1 "
++                      "THEN p.home_phonenumber "
++                    "ELSE '' "
++                    "END AS home_phonenumber, "
++                  "CASE  "
++                    "WHEN p.work_phonenumber_permission = 1 "
++                      "THEN p.work_phonenumber "
++                    "ELSE '' "
++                    "END AS work_phonenumber, "
++                  "CASE  "
++                    "WHEN p.nationality_permission = 1 "
++                      "THEN p.nationality "
++                    "ELSE '' "
++                    "END AS nationality, "
++                  "CASE  "
++                    "WHEN p.url_permission = 1 "
++                      "THEN p.url "
++                    "ELSE '' "
++                    "END AS url, "
++                  "CASE  "
++                    "WHEN p.organization_permission = 1 "
++                      "THEN p.organization "
++                    "ELSE '' "
++                    "END AS organization, "
++                  "CASE  "
++                    "WHEN p.organization_unit_permission = 1 "
++                      "THEN p.organization_unit "
++                    "ELSE '' "
++                    "END AS organization_unit, "
++                  "CASE  "
++                    "WHEN p.title_permission = 1 "
++                      "THEN p.title "
++                    "ELSE '' "
++                    "END AS title, "
++                  "CASE  "
++                    "WHEN p.role_permission = 1 "
++                      "THEN p.role "
++                    "ELSE '' "
++                    "END AS role, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_street "
++                    "ELSE '' "
++                    "END AS address_home_street, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_extadd "
++                    "ELSE '' "
++                    "END AS address_home_extadd, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_locality "
++                    "ELSE '' "
++                    "END AS address_home_locality, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_region "
++                    "ELSE '' "
++                    "END AS address_home_region, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_postcode "
++                    "ELSE '' "
++                    "END AS address_home_postcode, "
++                  "CASE  "
++                    "WHEN p.address_home_permission = 1 "
++                      "THEN p.address_home_country "
++                    "ELSE '' "
++                    "END AS address_home_country, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_street "
++                    "ELSE '' "
++                    "END AS address_work_street, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_extadd "
++                    "ELSE '' "
++                    "END AS address_work_extadd, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_locality "
++                    "ELSE '' "
++                    "END AS address_work_locality, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_region "
++                    "ELSE '' "
++                    "END AS address_work_region, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_postcode "
++                    "ELSE '' "
++                    "END AS address_work_postcode, "
++                  "CASE  "
++                    "WHEN p.address_work_permission = 1 "
++                      "THEN p.address_work_country "
++                    "ELSE '' "
++                    "END AS address_work_country, "
++                  "CASE  "
++                    "WHEN p.description_permission = 1 "
++                      "THEN p.description "
++                    "ELSE '' "
++                    "END AS description, "
++                  "CASE  "
++                    "WHEN p.birthday_permission = 1 "
++                      "THEN to_char(p.birthday, 'YYYY-MM-DD') "
++                    "ELSE '' "
++                    "END AS birthday "
++                "FROM core_userprofile AS p, "
++                  "auth_user ", MatchSpec, 
++                "AND p.user_id = auth_user.id AND auth_user.is_active = true",
++              Limit, ") as vcard;"]) of
++    {selected, ["username", "first_name", "last_name", "phonenumber", "home_phonenumber", "work_phonenumber", "nationality", "url", "organization", "organization_unit", "title", "role", "address_home_street", "address_home_extadd", "address_home_locality", "address_home_region", "address_home_postcode", "address_home_country", "address_work_street", "address_work_extadd", "address_work_locality", "address_work_region", "address_work_postcode", "address_work_country", "description", "birthday"],
++     Rs} when is_list(Rs) ->
++        Rs;
++    Error ->
++        ?ERROR_MSG("~p", [Error]),
++        []
++        end
+     end.
+ 
+ 
+@@ -533,16 +699,15 @@
+   when is_list(Val) and (Val /= "") ->
+     LVal = string:to_lower(Val),
+     NewMatch = case SVar of
+-                   "user"     -> make_val(Match, "lusername", LVal);
+-                   "fn"       -> make_val(Match, "lfn",       LVal);
+-                   "last"     -> make_val(Match, "lfamily",   LVal);
+-                   "first"    -> make_val(Match, "lgiven",    LVal);
+-                   "middle"   -> make_val(Match, "lmiddle",   LVal);
+-                   "nick"     -> make_val(Match, "lnickname", LVal);
+-                   "bday"     -> make_val(Match, "lbday",     LVal);
+-                   "ctry"     -> make_val(Match, "lctry",     LVal);
++                   "user"     -> make_val(Match, "username", LVal);
++                   "fn"       -> make_val(Match, "first_name || ' ' || last_name",       LVal);
++                   "last"     -> make_val(Match, "last_name",   LVal);
++                   "first"    -> make_val(Match, "first_name",    LVal);
++                   "middle"   -> make_val(Match, "middle",   LVal);
++                   "nick"     -> make_val(Match, "nickname", LVal);
++                   "bday"     -> make_val(Match, "bday",     LVal);
++                   "ctry"     -> make_val(Match, "ctry",     LVal);
+                    "locality" -> make_val(Match, "llocality", LVal);
+-                   "email"    -> make_val(Match, "lemail",    LVal);
+                    "orgname"  -> make_val(Match, "lorgname",  LVal);
+                    "orgunit"  -> make_val(Match, "lorgunit",  LVal);
+ 		   _          -> Match
+@@ -553,11 +718,12 @@
+ 
+ make_val(Match, Field, Val) ->
+     Condition =
+-	case lists:suffix("*", Val) of
++	case lists:suffix("*", Val) or lists:prefix("*", Val) of
+ 	    true ->
+-		Val1 = lists:sublist(Val, length(Val) - 1),
+-		SVal = ejabberd_odbc:escape_like(Val1) ++ "%",
+-		[Field, " LIKE '", SVal, "'"];
++		% Val1 = lists:sublist(Val, length(Val) - 1),
++		SVal = ejabberd_odbc:escape_like(Val),
++        Val2 = re:replace(SVal, "[*]+", "%", [global,{return,list}]),
++		[Field, " ILIKE '", Val2, "'"];
+ 	    _ ->
+ 		SVal = ejabberd_odbc:escape(Val),
+ 		[Field, " = '", SVal, "'"]
+
+--- src/odbc/odbc_queries.erl	2013-02-11 15:25:59.198000160 +0100
++++ src/odbc/odbc_queries.erl	2013-02-11 15:26:20.864000153 +0100
+@@ -75,8 +75,8 @@
+ 	 add_privacy_list/2,
+ 	 set_privacy_list/2,
+ 	 del_privacy_lists/3,
+-	 set_vcard/26,
+-	 get_vcard/2,
++	 set_vcard/20,
++	 get_vcard/3,
+ 	 escape/1,
+ 	 count_records_where/3,
+ 	 get_roster_version/2,
+@@ -424,35 +424,211 @@
+       LServer,
+       ["delete from private_storage where username='", Username, "';"]).
+ 
+-set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SFN, SFamily, SGiven,
+-	  SLBDay, SLCTRY, SLEMail, SLFN, SLFamily, SLGiven, SLLocality,
+-	  SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
+-	  SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
+-    ejabberd_odbc:sql_transaction(
+-      LServer,
+-      fun() ->
+-	      update_t("vcard", ["username", "vcard"],
+-		       [LUsername, SVCARD],
+-		       ["username='", LUsername, "'"]),
+-	      update_t("vcard_search",
+-		       ["username", "lusername", "fn", "lfn", "family",
+-			"lfamily", "given", "lgiven", "middle", "lmiddle",
+-			"nickname", "lnickname", "bday", "lbday", "ctry",
+-			"lctry", "locality", "llocality", "email", "lemail",
+-			"orgname", "lorgname", "orgunit", "lorgunit"],
+-		       [Username, LUsername, SFN, SLFN, SFamily, SLFamily,
+-			SGiven, SLGiven, SMiddle, SLMiddle, SNickname,
+-			SLNickname, SBDay, SLBDay, SCTRY, SLCTRY,
+-			SLocality, SLLocality, SEMail, SLEMail, SOrgName,
+-			SLOrgName, SOrgUnit, SLOrgUnit],
+-		       ["lusername='", LUsername, "'"])
+-      end).
+-
+-get_vcard(LServer, Username) ->
+-    ejabberd_odbc:sql_query(
+-      LServer,
+-      ["select vcard from vcard "
+-       "where username='", Username, "';"]).
++set_vcard(LServer, LUsername , SFamily , SGiven , 
++            SBDay , SEMail , SOrgName , SOrgUnit , SUrl , STitle , SDesc , 
++            SRole , STel , SAddressHomeExtadd , SAddressHomeStreet , 
++            SAddressHomeLocality , SAddressHomeRegion , SAddressHomePostcode , 
++            SAddressHomeCity, Username) ->
++
++% set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SFN, SFamily, SGiven,
++% 	  SLBDay, SLCTRY, SLEMail, SLFN, SLFamily, SLGiven, SLLocality,
++% 	  SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
++% 	  SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
++    % ejabberd_odbc:sql_query(
++    %   LServer,
++    %   ["select 1;"]).
++
++
++    ejabberd_odbc:sql_query(
++      LServer,
++      ["UPDATE core_userprofile SET "
++        % "xmpp_server = '", LServer, "', "
++        "birthday = (SELECT CASE WHEN '", SBDay, "' = '' THEN null ELSE '", SBDay, "' END)::date, "
++        "organization = '", SOrgName, "', "
++        "organization_unit = '", SOrgUnit, "', "
++        "url = '", SUrl, "', "
++        "title = '", STitle, "', "
++        "description = '", SDesc, "', "
++        "role = '", SRole, "', "
++        % "phonenumber = '", STel, "', "
++        "address_home_extadd = '", SAddressHomeExtadd, "', "
++        "address_home_street = '", SAddressHomeStreet, "', "
++        "address_home_locality = '", SAddressHomeLocality, "', "
++        "address_home_region = '", SAddressHomeRegion, "', "
++        "address_home_postcode = '", SAddressHomePostcode, "', "
++        "address_home_country = '", SAddressHomeCity, "'"
++        " WHERE user_id=(select auth_user.id from auth_user where auth_user.username='", LUsername, "');",
++      "UPDATE auth_user SET "
++        "first_name = '", SGiven, "', "
++        "last_name = '", SFamily, "'"
++        " WHERE username='", LUsername, "';"
++      ]
++    ).
++
++get_vcard(LServer, Username, FromUsername) ->
++    ejabberd_odbc:sql_query(
++      LServer,
++      ["SELECT '"
++          "<vCard xmlns=\"vcard-temp\">"
++          "<FN>' || vcard.first_name || ' ' || vcard.last_name || '</FN>"
++          "<N>"
++            "<FAMILY>' || vcard.last_name || '</FAMILY>"
++            "<GIVEN>' || vcard.first_name || '</GIVEN>"
++          "</N>"
++          "<URL>' || vcard.url || '</URL>"
++          "<BDAY>' || vcard.birthday || '</BDAY>"
++          "<ORG>"
++            "<ORGNAME>' || vcard.organization || '</ORGNAME>"
++            "<ORGUNIT>' || vcard.organization_unit || '</ORGUNIT>"
++          "</ORG>"
++          "<TITLE>' || vcard.title || '</TITLE>"
++          "<ROLE>' || vcard.role || '</ROLE>"
++          "<TEL><CELL/><VOICE/><NUMBER>' || vcard.phonenumber || '</NUMBER></TEL>"
++          "<TEL><HOME/><VOICE/><NUMBER>' || vcard.home_phonenumber || '</NUMBER></TEL>"
++          "<TEL><WORK/><VOICE/><NUMBER>' || vcard.work_phonenumber || '</NUMBER></TEL>"
++          "<ADR>"
++            "<WORK/>"
++            "<EXTADD>' || vcard.address_work_extadd || '</EXTADD>"
++            "<STREET>' || vcard.address_work_street || '</STREET>"
++            "<LOCALITY>' || vcard.address_work_locality || '</LOCALITY>"
++            "<REGION>' || vcard.address_work_region || '</REGION>"
++            "<PCODE>' || vcard.address_work_postcode || '</PCODE>"
++            "<CTRY>' || vcard.address_work_country || '</CTRY>"
++          "</ADR>"
++          "<ADR>"
++            "<HOME/>"
++            "<EXTADD>' || vcard.address_home_extadd || '</EXTADD>"
++            "<STREET>' || vcard.address_home_street || '</STREET>"
++            "<LOCALITY>' || vcard.address_home_locality || '</LOCALITY>"
++            "<REGION>' || vcard.address_home_region || '</REGION>"
++            "<PCODE>' || vcard.address_home_postcode || '</PCODE>"
++            "<CTRY>' || vcard.address_home_country || '</CTRY>"
++          "</ADR>"
++          "<DESC>' || vcard.description || '</DESC>"
++          "</vCard>' AS vcard "
++      "FROM ( "
++        "SELECT auth_user.first_name, "
++          "auth_user.last_name, "
++          "CASE  "
++            "WHEN p.phonenumber IS NOT null AND ('", Username, "' = '", FromUsername, "' OR p.phonenumber_permission = 1) "
++              "THEN p.phonenumber "
++            "ELSE '' "
++            "END AS phonenumber, "
++          "CASE  "
++            "WHEN p.home_phonenumber IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.home_phonenumber_permission = 1) "
++              "THEN p.home_phonenumber "
++            "ELSE '' "
++            "END AS home_phonenumber, "
++          "CASE  "
++            "WHEN p.work_phonenumber IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.work_phonenumber_permission = 1) "
++              "THEN p.work_phonenumber "
++            "ELSE '' "
++            "END AS work_phonenumber, "
++          "CASE  "
++            "WHEN p.nationality IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.nationality_permission = 1) "
++              "THEN p.nationality "
++            "ELSE '' "
++            "END AS nationality, "
++          "CASE  "
++            "WHEN p.url IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.url_permission = 1) "
++              "THEN p.url "
++            "ELSE '' "
++            "END AS url, "
++          "CASE  "
++            "WHEN p.organization IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.organization_permission = 1) "
++              "THEN p.organization "
++            "ELSE '' "
++            "END AS organization, "
++          "CASE  "
++            "WHEN p.organization_unit IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.organization_unit_permission = 1) "
++              "THEN p.organization_unit "
++            "ELSE '' "
++            "END AS organization_unit, "
++          "CASE  "
++            "WHEN p.title IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.title_permission = 1) "
++              "THEN p.title "
++            "ELSE '' "
++            "END AS title, "
++          "CASE  "
++            "WHEN p.role IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.role_permission = 1) "
++              "THEN p.role "
++            "ELSE '' "
++            "END AS role, "
++          "CASE  "
++            "WHEN p.address_home_street IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_street "
++            "ELSE '' "
++            "END AS address_home_street, "
++          "CASE  "
++            "WHEN p.address_home_extadd IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_extadd "
++            "ELSE '' "
++            "END AS address_home_extadd, "
++          "CASE  "
++            "WHEN p.address_home_locality IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_locality "
++            "ELSE '' "
++            "END AS address_home_locality, "
++          "CASE  "
++            "WHEN p.address_home_region IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_region "
++            "ELSE '' "
++            "END AS address_home_region, "
++          "CASE  "
++            "WHEN p.address_home_postcode IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_postcode "
++            "ELSE '' "
++            "END AS address_home_postcode, "
++          "CASE  "
++            "WHEN p.address_home_country IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_home_permission = 1) "
++              "THEN p.address_home_country "
++            "ELSE '' "
++            "END AS address_home_country, "
++          "CASE  "
++            "WHEN p.address_work_street IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_street "
++            "ELSE '' "
++            "END AS address_work_street, "
++          "CASE  "
++            "WHEN p.address_work_extadd IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_extadd "
++            "ELSE '' "
++            "END AS address_work_extadd, "
++          "CASE  "
++            "WHEN p.address_work_locality IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_locality "
++            "ELSE '' "
++            "END AS address_work_locality, "
++          "CASE  "
++            "WHEN p.address_work_region IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_region "
++            "ELSE '' "
++            "END AS address_work_region, "
++          "CASE  "
++            "WHEN p.address_work_postcode IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_postcode "
++            "ELSE '' "
++            "END AS address_work_postcode, "
++          "CASE  "
++            "WHEN p.address_work_country IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.address_work_permission = 1) "
++              "THEN p.address_work_country "
++            "ELSE '' "
++            "END AS address_work_country, "
++          "CASE  "
++            "WHEN p.description IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.description_permission = 1) "
++              "THEN p.description "
++            "ELSE '' "
++            "END AS description, "
++          "CASE  "
++            "WHEN p.birthday IS NOT null AND ('", Username, "' = '", FromUsername, "' OR  p.birthday_permission = 1) "
++              "THEN to_char(p.birthday, 'YYYY-MM-DD') "
++            "ELSE '' "
++            "END AS birthday "
++        "FROM core_userprofile AS p, "
++          "auth_user "
++        "WHERE p.user_id = auth_user.id "
++          "AND auth_user.username = '", Username, "' "
++        ") AS vcard;"]).
+ 
+ get_default_privacy_list(LServer, Username) ->
+     ejabberd_odbc:sql_query(
+@@ -777,24 +953,24 @@
+         LServer,
+         ["EXECUTE dbo.del_user_storage '", Username, "'"]).
+ 
+-set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SFN, SFamily, SGiven,
+-	  SLBDay, SLCTRY, SLEMail, SLFN, SLFamily, SLGiven, SLLocality,
+-	  SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
+-	  SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
+-    ejabberd_odbc:sql_query(
+-      LServer,
+-      ["EXECUTE dbo.set_vcard '", SVCARD, "' , '", Username, "' , '", LUsername, "' , '",
+-       SFN, "' , '", SLFN, "' , '", SFamily, "' , '", SLFamily, "' , '",
+-       SGiven, "' , '", SLGiven, "' , '", SMiddle, "' , '", SLMiddle, "' , '",
+-       SNickname, "' , '", SLNickname, "' , '", SBDay, "' , '", SLBDay, "' , '",
+-       SCTRY, "' , '", SLCTRY, "' , '", SLocality, "' , '", SLLocality, "' , '",
+-       SEMail, "' , '", SLEMail, "' , '", SOrgName, "' , '", SLOrgName, "' , '",
+-       SOrgUnit, "' , '", SLOrgUnit, "'"]).
+-
+-get_vcard(LServer, Username) ->
+-    ejabberd_odbc:sql_query(
+-      LServer,
+-      ["EXECUTE dbo.get_vcard '", Username, "'"]).
++% set_vcard(LServer, LUsername, SBDay, SCTRY, SEMail, SFN, SFamily, SGiven,
++% 	  SLBDay, SLCTRY, SLEMail, SLFN, SLFamily, SLGiven, SLLocality,
++% 	  SLMiddle, SLNickname, SLOrgName, SLOrgUnit, SLocality, SMiddle,
++% 	  SNickname, SOrgName, SOrgUnit, SVCARD, Username) ->
++%     ejabberd_odbc:sql_query(
++%       LServer,
++%       ["EXECUTE dbo.set_vcard '", SVCARD, "' , '", Username, "' , '", LUsername, "' , '",
++%        SFN, "' , '", SLFN, "' , '", SFamily, "' , '", SLFamily, "' , '",
++%        SGiven, "' , '", SLGiven, "' , '", SMiddle, "' , '", SLMiddle, "' , '",
++%        SNickname, "' , '", SLNickname, "' , '", SBDay, "' , '", SLBDay, "' , '",
++%        SCTRY, "' , '", SLCTRY, "' , '", SLocality, "' , '", SLLocality, "' , '",
++%        SEMail, "' , '", SLEMail, "' , '", SOrgName, "' , '", SLOrgName, "' , '",
++%        SOrgUnit, "' , '", SLOrgUnit, "'"]).
++
++% get_vcard(LServer, Username) ->
++%     ejabberd_odbc:sql_query(
++%       LServer,
++%       ["EXECUTE dbo.get_vcard '", Username, "'"]).
+ 
+ get_default_privacy_list(LServer, Username) ->
+     ejabberd_odbc:sql_query(

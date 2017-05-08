@@ -1,0 +1,13 @@
+diff --git a/src/ejabberd_auth_odbc.erl b/src/ejabberd_auth_odbc.erl
+index e2d43a4..48022cb 100644
+--- a/src/ejabberd_auth_odbc.erl
++++ b/src/ejabberd_auth_odbc.erl
+@@ -72,6 +72,8 @@ check_password(User, Server, Password) ->
+        try odbc_queries:get_password(LServer, Username) of
+        {selected, ["password"], [{Password}]} ->
+            Password /= ""; %% Password is correct, and not empty
++       {selected, ["password"], [{Password}]} ->
++           Password /= "!"; %% Password is correct, and not empty
+        {selected, ["password"], [{_Password2}]} ->
+            false; %% Password is not correct
+        {selected, ["password"], []} ->
